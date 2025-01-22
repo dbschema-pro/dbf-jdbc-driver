@@ -12,6 +12,7 @@ import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.nio.charset.Charset;
+import java.nio.file.Files;
 import java.sql.*;
 import java.util.Map;
 import java.util.Properties;
@@ -87,10 +88,10 @@ public class H2Connection implements Connection {
                     try {
                         saveDbf(matcher.group(5));
                     } catch (SQLException ex) {
-                        ex.printStackTrace();
+                        LOGGER.log( Level.SEVERE, "Error saving dbf", ex );
                         throw ex;
                     } catch (Exception ex) {
-                        ex.printStackTrace();
+                        LOGGER.log( Level.SEVERE, "Error saving dbf", ex );
                         throw new SQLException(ex.getLocalizedMessage(), ex);
                     }
                     args = new String[]{""};
@@ -112,7 +113,7 @@ public class H2Connection implements Connection {
             for ( File dbfFile : files) {
                 if ( dbfFile.isFile() ){
                     if ( dbfFile.getName().toLowerCase().endsWith(".dbf") ) {
-                        try ( DBFReader reader = new DBFReader( new FileInputStream(dbfFile), defaultCharset )) {
+                        try ( DBFReader reader = new DBFReader( Files.newInputStream(dbfFile.toPath() ), defaultCharset )) {
                             File memoFile = new File(dbfFolder, dbfFile.getName().substring(0, dbfFile.getName().length() - 4) + ".fpt");
                             if (memoFile.exists()) {
                                 reader.setMemoFile(memoFile);
@@ -165,6 +166,15 @@ public class H2Connection implements Connection {
         try (PreparedStatement st = h2Connection.prepareStatement("DELETE FROM " + FILES_META_TABLE + " WHERE file_path=?")) {
             st.setString(1, filePath);
             st.executeUpdate();
+            final File folder = (new File(filePath)).getParentFile();
+
+            if (!folder.exists()) {
+                throw new SQLException("Folder does not exists: '" + folder + "'");
+            }
+            if (!folder.isDirectory()) {
+                throw new SQLException("Expected path is not folder: '" + folder + "'");
+            }
+            transferFolder(folder, folder, this.h2Connection, null);
         }
     }
 
@@ -259,8 +269,6 @@ public class H2Connection implements Connection {
         h2Connection.clearWarnings();
     }
 
-
-
     @Override
     public PreparedStatement prepareStatement(String sql, int resultSetType, int resultSetConcurrency) throws SQLException {
         return h2Connection.prepareStatement( sql, resultSetType, resultSetConcurrency );
@@ -310,8 +318,6 @@ public class H2Connection implements Connection {
     public void releaseSavepoint(Savepoint savepoint) throws SQLException {
         h2Connection.releaseSavepoint( savepoint );
     }
-
-
 
     @Override
     public PreparedStatement prepareStatement(String sql, int resultSetType, int resultSetConcurrency, int resultSetHoldability) throws SQLException {
